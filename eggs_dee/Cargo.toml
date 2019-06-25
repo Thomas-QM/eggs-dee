@@ -1,0 +1,11 @@
+[package]
+name = "eggs_dee"
+version = "0.1.0"
+authors = ["Thomas-QM <thomas@engineeringvirtue.net>"]
+edition = "2018"
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+structopt = "0.2.16"

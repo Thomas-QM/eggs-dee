@@ -1,12 +1,2 @@
-[package]
-name = "eggs_dee"
-version = "0.1.0"
-authors = ["Thomas-QM <thomas@engineeringvirtue.net>"]
-edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-structopt = "0.2.16"
-multiinput = { git = "https://github.com/Jonesey13/multiinput-rust" }
-autopilot = "0.2.0"
+[workspace]
+members = ["eggs_dee", "app"]
