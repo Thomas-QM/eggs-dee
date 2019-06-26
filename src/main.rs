@@ -1,12 +1,76 @@
+extern crate termcolor;
+#[macro_use] extern crate errer;
+#[macro_use] extern crate errer_derive;
+
 extern crate lazy_static;
 extern crate structopt;
 extern crate cpython;
 
+use errer::PrintError;
 use lazy_static::lazy_static;
 use structopt::StructOpt;
+use termcolor::*;
 use cpython::*;
 
 use std::sync::Mutex;
+use std::io;
+use std::io::Write;
+
+#[derive(Errer)]
+enum Error {
+    #[errer(from)]
+    Py(PyErr),
+    EmptyInput,
+    InvalidKey(char),
+    BadIndex(usize),
+    NoSeparators(usize)
+}
+
+impl PrintError for Error {
+    fn print(&self, io: &mut StandardStream) -> io::Result<()> {
+        io.set_color(ColorSpec::new().set_fg(Some(Color::Red)))?;
+
+        match self {
+            Error::EmptyInput => {
+                writeln!(io, "cannot decode nothing. give me some input")?;
+            },
+            Error::InvalidKey(key) => {
+                write!(io, "error decoding: ")?;
+                io.set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
+                writeln!(io, "keys (the first letter) must be an encodable character. '{}' is not part of \"{}\"", key, &ENCODE_PATTERN)?;
+            },
+            Error::BadIndex(key) | Error::NoSeparators(key) => {
+                write!(io, "error decoding (key {}): ", key)?;
+                io.set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
+            
+                match self {
+                    Error::BadIndex(_) => {
+                        writeln!(io, "invalid index")?;
+                    },
+                    Error::NoSeparators(_) => {
+                        writeln!(io, "no separators found")?;
+                    },
+                    _ => ()
+                }
+
+                io.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
+                writeln!(io, "maybe try using a different key.")?;
+            },
+            Error::Py(pyerr) => {
+                writeln!(io, "error while interpreting python")?;
+                io.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
+                writeln!(io, "report this stacktrace / try to debug it yourself. this is likely platform-specific")?;
+
+                io.set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
+                with_py(|py| pyerr.clone_ref(py).print(py));
+            }
+        }
+
+        io.set_color(ColorSpec::new().set_fg(Some(Color::White)))
+    }
+}
+
+res!(Error);
 
 #[derive(Default)]
 struct State {
@@ -28,7 +92,7 @@ struct Opt {
     decode: Option<String>,
 }
 
-const ENCODE_PATTERN: &str = "1234567890qwertyuiopasdfghjklzxcvbnm,<.>/?";
+const ENCODE_PATTERN: &str = "1234567890qwertyuiopasdfghjklzxcvbnm,.;'[]";
 const DECODE_PATTERN: &str = " QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjkl1234567890-_=+;:'\"zxcvbnm,<.>/?";
 
 // https://stackoverflow.com/questions/14997165/fastest-way-to-get-a-positive-modulo-in-c-c
@@ -117,6 +181,7 @@ fn callback(py: Python, event: PyObject) -> PyResult<bool> {
             Some(k) => k,
             None => return
         };
+
         let mut keys = expand_base(state.variance, c_k);
     
         let key = match state.key {
@@ -132,7 +197,7 @@ fn callback(py: Python, event: PyObject) -> PyResult<bool> {
             }
         };
 
-        keys.push(state.variance+(1+(c_k%(state.variance-1))));
+        keys.push(state.variance+1+(c_k%(state.variance-1)));
         state.lens.push(keys.len());
         if state.lens.len() > 50 {
             state.lens.remove(0);
@@ -144,7 +209,6 @@ fn callback(py: Python, event: PyObject) -> PyResult<bool> {
         with_py(|py| {
             keyboard.call(py, "send", ("backspace",), None).unwrap();
         });
-        
         
         for x in keys {
             let x = (x+key)%ENCODE_PATTERN.len();
@@ -161,14 +225,19 @@ fn callback(py: Python, event: PyObject) -> PyResult<bool> {
     Ok(true)
 }
 
-fn main() {
+fn main_res() -> Res<()> {
     let opt = Opt::from_args();
 
     if let Some(decode) = opt.decode {
         let mut s = String::new();
+
+        if decode.len() == 0 {
+            return Err(Error::EmptyInput);
+        }
         
         let mut iter = decode.chars();
-        let key = get_k(iter.next().unwrap()).unwrap();
+        let key_char = iter.next().unwrap();
+        let key = get_k(key_char).ok_or(Error::InvalidKey(key_char))?;
         
         let mut chunk = Vec::new();
         
@@ -180,22 +249,30 @@ fn main() {
                 }
             };
 
-            if k > key+opt.variance || (k > ((key+opt.variance)%ENCODE_PATTERN.len()) && k < key) {
+            let x = modulo(k as i32-key as i32, ENCODE_PATTERN.len() as i32) as usize;
+
+            if x > opt.variance {
                 let i = compress_base(opt.variance, chunk.clone());
 
-                s.push_str(&DECODE_PATTERN[i..i+1]);
+                if let Some(x) = DECODE_PATTERN.get(i..i+1) {
+                    s.push_str(&x);
+                } else {
+                    return Err(Error::BadIndex(key));
+                }
                 
                 chunk.clear();
             } else {
-                let x = modulo(k as i32-key as i32, ENCODE_PATTERN.len() as i32) as usize;
-                
                 chunk.push(x);
             }
         }
 
-        println!("{}", s);
+        if s.len() > 0 {
+            println!("{}", s);
+        } else {
+            return Err(Error::NoSeparators(key));
+        }
 
-        return;
+        return Ok(());
     }
 
     let gil = Python::acquire_gil();
@@ -208,14 +285,28 @@ fn main() {
         l.variance = opt.variance;
 
         
-        let keyboard = py.import("keyboard").unwrap();
+        let keyboard = py.import("keyboard")?;
         
         let cb = py_fn!(py, callback(event: PyObject));
-        keyboard.call(py, "on_press", (cb,), None).unwrap();
+        keyboard.call(py, "on_press", (cb,), None)?;
 
-        keyboard_wait = keyboard.get(py, "wait").unwrap();
+        keyboard_wait = keyboard.get(py, "wait")?;
         l.keyboard = Some(keyboard);
     }
 
-    keyboard_wait.call(py, NoArgs, None).unwrap();
+    if let Err(x) = keyboard_wait.call(py, NoArgs, None) {
+        if x.get_type(py) == cpython::exc::KeyboardInterrupt::type_object(py) {
+            return Ok(());
+        } else {
+            return Err(x.into());
+        }
+    }
+
+    Ok(())
+}
+
+fn main() {
+    if let Err(x) = main_res() {
+        x.print(&mut StandardStream::stderr(ColorChoice::Auto)).unwrap();
+    }
 }
