@@ -31,13 +31,6 @@ struct Opt {
 const ENCODE_PATTERN: &str = "1234567890qwertyuiopasdfghjklzxcvbnm,<.>/?";
 const DECODE_PATTERN: &str = " QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjkl1234567890-_=+;:'\"zxcvbnm,<.>/?";
 
-fn py_print<T: PythonObject>(py: Python, obj: &T) {
-    let locals = PyDict::new(py);
-    locals.set_item(py, "x", obj).unwrap();
-
-    py.run("print(x)", None, Some(&locals)).unwrap();
-}
-
 // https://stackoverflow.com/questions/14997165/fastest-way-to-get-a-positive-modulo-in-c-c
 fn modulo(i: i32, n: i32) -> i32 {
     (i % n + n) % n
