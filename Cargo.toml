@@ -1,2 +1,12 @@
-[workspace]
-members = ["eggs_dee", "app"]
+[package]
+name = "eggs_dee"
+version = "0.1.0"
+authors = ["Thomas-QM <thomas@engineeringvirtue.net>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lazy_static = "1.3.0"
+structopt = "0.2.16"
+cpython = "0.2.1"
