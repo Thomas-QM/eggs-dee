@@ -1,6 +1,6 @@
 [package]
 name = "eggs_dee"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Thomas-QM <thomas@engineeringvirtue.net>"]
 edition = "2018"
 
