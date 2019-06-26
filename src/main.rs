@@ -36,12 +36,12 @@ impl PrintError for Error {
             },
             Error::InvalidKey(key) => {
                 write!(io, "error decoding: ")?;
-                io.set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
+                io.set_color(&ColorSpec::new())?;
                 writeln!(io, "keys (the first letter) must be an encodable character. '{}' is not part of \"{}\"", key, &ENCODE_PATTERN)?;
             },
             Error::BadIndex(key) | Error::NoSeparators(key) => {
                 write!(io, "error decoding (key {}): ", key)?;
-                io.set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
+                io.set_color(&ColorSpec::new())?;
             
                 match self {
                     Error::BadIndex(_) => {
@@ -55,18 +55,20 @@ impl PrintError for Error {
 
                 io.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
                 writeln!(io, "maybe try using a different key.")?;
+                
+                io.set_color(&ColorSpec::new())?;
             },
             Error::Py(pyerr) => {
                 writeln!(io, "error while interpreting python")?;
                 io.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
                 writeln!(io, "report this stacktrace / try to debug it yourself. this is likely platform-specific")?;
 
-                io.set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
+                io.set_color(&ColorSpec::new())?;
                 with_py(|py| pyerr.clone_ref(py).print(py));
             }
         }
 
-        io.set_color(ColorSpec::new().set_fg(Some(Color::White)))
+        Ok(())
     }
 }
 
@@ -208,6 +210,7 @@ fn callback(py: Python, event: PyObject) -> PyResult<bool> {
         let keyboard = state.keyboard.as_ref().unwrap();
         with_py(|py| {
             keyboard.call(py, "send", ("backspace",), None).unwrap();
+            keyboard.call(py, "release", ("shift",), None).unwrap();
         });
         
         for x in keys {
